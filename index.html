@@ -1,0 +1,546 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Módulo de apertura 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap">
+<style>
+/* Layout: banco de trabajo — visor 3D grande a la izquierda, panel de secuencia y E/S a la derecha; se apila en teléfono */
+:root{
+  --bg:#eceff2; --panel:#fbfcfd; --ink:#16202a; --muted:#5a6673; --line:#d3d9e0;
+  --accent:#d4561c; --vac:#2c68cf; --ok:#1d8f4e; --scene:#e3e7eb; --chip:#eef1f4;
+  --f-display:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10151b; --panel:#171e26; --ink:#e5ebf1; --muted:#93a0ad; --line:#29343f;
+  --accent:#ff7b3f; --vac:#5c95f2; --ok:#3ccd7c; --scene:#131a21; --chip:#1e2731; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10151b; --panel:#171e26; --ink:#e5ebf1; --muted:#93a0ad; --line:#29343f;
+  --accent:#ff7b3f; --vac:#5c95f2; --ok:#3ccd7c; --scene:#131a21; --chip:#1e2731; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 28px}
+.wrap{max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+h1{font-family:var(--f-display);font-weight:600;font-size:clamp(22px,3vw,30px);letter-spacing:.01em;margin:0;text-wrap:balance;line-height:1.1}
+.sub{color:var(--muted);margin:4px 0 0;max-width:62ch}
+.specs{display:flex;flex-wrap:wrap;gap:6px}
+.spec{font-family:var(--f-mono);font-size:12px;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:3px 8px;white-space:nowrap}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:960px){.grid{grid-template-columns:minmax(0,1fr)}}
+.viewer{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;min-width:0}
+.stage{position:relative;height:clamp(380px,62vh,700px);background:var(--scene)}
+canvas#c{display:block;width:100%;height:100%;touch-action:none}
+.labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lbl{position:absolute;left:0;top:0;font-size:11.5px;font-weight:500;white-space:nowrap;padding:2px 7px;border-radius:3px;
+  background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);color:var(--ink);transform-origin:0 50%}
+.lbl::before{content:"";position:absolute;left:-4px;top:50%;width:6px;height:6px;margin-top:-3px;border-radius:50%;background:var(--ink)}
+.hud{position:absolute;left:12px;top:12px;right:12px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;flex-wrap:wrap}
+.now{background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:4px;padding:8px 10px;max-width:420px}
+.now .k{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.06em;text-transform:uppercase}
+.now .t{font-weight:600;font-size:15px}
+.now .d{color:var(--muted);font-size:12.5px;margin-top:2px}
+.views{display:flex;gap:4px;pointer-events:auto;align-self:flex-start;flex-wrap:wrap}
+button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.views button{font-size:12px;padding:4px 8px}
+.transport{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+.transport .play{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;min-width:112px}
+.tl{flex:1 1 260px;display:flex;gap:2px;height:22px;min-width:0}
+.seg{flex:1;position:relative;background:var(--chip);border-radius:2px;cursor:pointer;overflow:hidden;border:none;padding:0}
+.seg .fill{position:absolute;inset:0;width:0;background:var(--accent);opacity:.85}
+.seg span{position:relative;font-family:var(--f-mono);font-size:10px;color:var(--muted)}
+.seg.done span,.seg.cur span{color:#fff}
+.toggles{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.toggles label{display:flex;align-items:center;gap:5px;cursor:pointer}
+select{font:inherit;font-size:12.5px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:3px 6px}
+aside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px}
+.card h2{font-family:var(--f-display);font-size:15px;font-weight:600;margin:0 0 10px;letter-spacing:.02em}
+ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+ol.steps li button{width:100%;text-align:left;border:none;border-radius:3px;background:transparent;display:grid;grid-template-columns:28px 1fr auto;gap:6px;padding:5px 6px;align-items:baseline}
+ol.steps li button:hover{background:var(--chip)}
+ol.steps .n{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+ol.steps .g{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+ol.steps li.cur button{background:var(--chip);box-shadow:inset 3px 0 0 var(--accent)}
+ol.steps li.cur .n{color:var(--accent)}
+.phase{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:8px 6px 2px}
+.outs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.q{display:flex;gap:6px;align-items:center;font-size:12px;padding:3px 6px;border-radius:3px;background:var(--chip);color:var(--muted)}
+.q b{font-family:var(--f-mono);font-weight:500;min-width:26px}
+.q i{width:8px;height:8px;border-radius:50%;border:1px solid var(--muted);flex:none}
+.q.on{color:var(--ink)}
+.q.on i{background:var(--ok);border-color:var(--ok);box-shadow:0 0 6px var(--ok)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+td{padding:4px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td:last-child{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}
+tr:last-child td{border-bottom:none}
+.note{font-size:12px;color:var(--muted);margin:8px 0 0}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{width:12px;height:12px;border-radius:2px;display:inline-block}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Módulo de apertura y carga asistida</h1>
+      <p class="sub">Modelo conceptual en 3D. Arrastra para girar, rueda o pellizco para acercar. Reproduce la secuencia o salta a cualquier paso.</p>
+    </div>
+    <div class="specs">
+      <span class="spec">Bolsa PE 205 × 305 mm</span>
+      <span class="spec">16 µm por cara</span>
+      <span class="spec">Sin labio</span>
+      <span class="spec">Boca 205 mm</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="viewer">
+      <div class="stage" id="stage">
+        <canvas id="c" aria-label="Modelo 3D del módulo de apertura de bolsa"></canvas>
+        <div class="labels" id="labels"></div>
+        <div class="hud">
+          <div class="now" aria-live="polite">
+            <div class="k" id="nowK">Paso 6</div>
+            <div class="t" id="nowT">Habilitar carga</div>
+            <div class="d" id="nowD"></div>
+          </div>
+          <div class="views" role="group" aria-label="Vista de cámara">
+            <button data-view="iso" aria-pressed="true">Isométrica</button>
+            <button data-view="op" aria-pressed="false">Operador</button>
+            <button data-view="side" aria-pressed="false">Lateral</button>
+            <button data-view="top" aria-pressed="false">Superior</button>
+            <button data-view="mouth" aria-pressed="false">Boca</button>
+          </div>
+        </div>
+      </div>
+      <div class="transport">
+        <button id="prev" aria-label="Paso anterior">◀</button>
+        <button id="play" class="play">Reproducir</button>
+        <button id="next" aria-label="Paso siguiente">▶</button>
+        <div class="tl" id="tl" aria-label="Línea de tiempo de la secuencia"></div>
+        <label class="toggles" for="speed">Velocidad
+          <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+        </label>
+      </div>
+      <div class="transport">
+        <div class="toggles">
+          <label><input type="checkbox" id="tGuard" checked> Guarda</label>
+          <label><input type="checkbox" id="tLabels" checked> Etiquetas</label>
+          <label><input type="checkbox" id="tColor" checked> Colores por función</label>
+          <label><input type="checkbox" id="tLoop" checked> Repetir</label>
+        </div>
+        <div class="legend" id="legend">
+          <span><i style="background:#2c68cf"></i>Vacío</span>
+          <span><i style="background:#e0662e"></i>Embudo</span>
+          <span><i style="background:#3fb97f;opacity:.7"></i>Película</span>
+          <span><i style="background:#9aa3ad"></i>Neumática</span>
+        </div>
+      </div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <h2>Secuencia</h2>
+        <ol class="steps" id="steps"></ol>
+      </div>
+      <div class="card">
+        <h2>Salidas del PLC activas</h2>
+        <div class="outs" id="outs"></div>
+      </div>
+      <div class="card">
+        <h2>Dimensiones del modelo</h2>
+        <table>
+          <tr><td>Bolsa plana</td><td>205 × 305 mm</td></tr>
+          <tr><td>Perímetro de la boca</td><td>410 mm</td></tr>
+          <tr><td>Zona de vacío A</td><td>120 × 50 mm</td></tr>
+          <tr><td>Barra de succión · carrera C1</td><td>120 mm · 50 mm</td></tr>
+          <tr><td>Embudo: ancho · inserción</td><td>160 · 35 mm</td></tr>
+          <tr><td>Hueco libre del embudo</td><td>8 → 30 mm</td></tr>
+          <tr><td>Perímetro con embudo abierto</td><td>384 mm</td></tr>
+          <tr><td>Carrera C2 · C3 · C4</td><td>60 · 22 · 25 mm</td></tr>
+          <tr><td>Pisador desde la boca</td><td>120 mm</td></tr>
+          <tr><td>Manual de ejemplo</td><td>230 × 150 × 15 mm</td></tr>
+        </table>
+        <p class="note">Dimensiones principales a escala. Cilindros, soportes y guarda simplificados; el espesor de la película está exagerado para que se vea.</p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- Secuencia ---------- */
+const OUTN={Q0:'C1 bajar barra',Q1:'C2 insertar embudo',Q2:'C3 abrir hoja',Q3:'C4 bajar pisador',Q4:'Vacío zona A',Q5:'Vacío barra',Q6:'Soplo liberación',Q7:'Aire ionizado',Q8:'Lámpara cargar',Q9:'Alarma',Q10:'Bolsa lista'};
+const STEPS=[
+ {n:1,ph:'Apertura',name:'Bolsa en posición',dur:1.3,outs:[],desc:'La bolsa llega plana con la boca en la línea de referencia.',tw:[['bagIn',1,0,.8]]},
+ {n:2,ph:'Apertura',name:'Sujetar cara inferior',dur:1.0,outs:['Q4'],desc:'Vacío en la zona A (120 mm al centro). VA confirma presencia.',tw:[['vacA',1,0,.3]]},
+ {n:3,ph:'Apertura',name:'Tomar cara superior',dur:1.4,outs:['Q0','Q4','Q5'],desc:'C1 baja la barra, hace vacío y VS confirma la toma.',tw:[['c1',1,0,.55],['vacBar',1,.55,.7],['hold',1,.7,.8]]},
+ {n:4,ph:'Apertura',name:'Levantar e inflar',dur:1.8,outs:['Q4','Q5','Q7'],desc:'C1 sube 50 mm y el aire ionizado infla la boca.',tw:[['ion',1,0,.1],['c1',0,.05,.7],['ion',0,.75,.9]]},
+ {n:5,ph:'Apertura',name:'Insertar embudo',dur:1.4,outs:['Q1','Q4','Q5'],desc:'C2 mete el embudo cerrado 35 mm entre las dos caras.',tw:[['c2',1,0,.85]]},
+ {n:6,ph:'Apertura',name:'Formar la boca',dur:1.6,outs:['Q1','Q2','Q4','Q6'],desc:'C3 abre la hoja a 30 mm libres; la barra suelta y la película se apoya en el embudo.',tw:[['c3',1,0,.6],['vacBar',0,.6,.7],['hold',0,.62,.95]]},
+ {n:7,ph:'Apertura',name:'Habilitar carga',dur:.8,outs:['Q1','Q2','Q4','Q8'],desc:'Lámpara verde. Todos los actuadores quietos.',tw:[['lamp',1,0,.2]]},
+ {n:8,ph:'Carga',name:'Cargar el manual',dur:2.8,outs:['Q1','Q2','Q4','Q8'],desc:'El operador desliza el manual sobre la hoja inferior. Cortina interrumpida: nada se mueve.',tw:[['curtain',1,.03,.08],['m',1,.1,.85],['curtain',0,.9,.97]]},
+ {n:9,ph:'Carga',name:'Confirmar',dur:.9,outs:['Q1','Q2','Q4'],desc:'Manos fuera, cortina libre, botón de confirmación.',tw:[['confirm',1,0,.3],['confirm',0,.6,1],['lamp',0,.7,1]]},
+ {n:10,ph:'Liberación',name:'Pisar',dur:1.0,outs:['Q1','Q2','Q3','Q4'],desc:'C4 baja el pisador sobre bolsa y manual.',tw:[['c4',1,0,.7]]},
+ {n:11,ph:'Liberación',name:'Retirar embudo',dur:1.4,outs:['Q2','Q3','Q4'],desc:'C2 saca el embudo abierto; el manual baja a la película.',tw:[['c2',0,0,.85],['mDrop',1,.3,.9]]},
+ {n:12,ph:'Liberación',name:'Cerrar y soltar',dur:1.2,outs:['Q3'],desc:'C3 cierra fuera de la bolsa, se corta el vacío y sube C4.',tw:[['c3',0,0,.5],['vacA',0,.4,.6],['c4',0,.5,1]]},
+ {n:13,ph:'Liberación',name:'Entregar a sellado',dur:1.6,outs:['Q10'],desc:'Señal de bolsa lista; la bolsa con el manual pasa a la siguiente etapa.',tw:[['exit',1,0,.9]]}
+];
+const INIT={bagIn:0,vacA:0,vacBar:0,hold:0,ion:0,c1:0,c2:0,c3:0,c4:0,m:0,mDrop:0,lamp:0,curtain:0,confirm:0,exit:0};
+let acc=0; STEPS.forEach(s=>{s.t0=acc;acc+=s.dur;}); const TOTAL=acc;
+const ease=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+function stateAt(t){
+  const s=Object.assign({},INIT);
+  for(const st of STEPS){
+    if(t>=st.t0+st.dur){for(const w of st.tw)s[w[0]]=w[1];continue;}
+    if(t<st.t0)break;
+    const p=(t-st.t0)/st.dur, full=Object.assign({},s);
+    for(const [k,to,a,b] of st.tw){const from=full[k];full[k]=to;if(p>=a){s[k]=from+(to-from)*ease(clamp((p-a)/(b-a),0,1));}}
+    break;
+  }
+  return s;
+}
+function stepIndexAt(t){for(let i=STEPS.length-1;i>=0;i--)if(t>=STEPS[i].t0-1e-6)return i;return 0;}
+
+/* ---------- Escena ---------- */
+const canvas=$('#c'), stage=$('#stage');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(38,1,2,8000);
+const controls=new THREE.OrbitControls(camera,canvas);
+controls.enableDamping=true; controls.dampingFactor=.08; controls.maxPolarAngle=Math.PI*.495;
+controls.minDistance=150; controls.maxDistance=2200;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x7a828c,.75));
+const sun=new THREE.DirectionalLight(0xffffff,.85); sun.position.set(-300,700,400);
+sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-500,right:500,top:500,bottom:-500,near:10,far:2000}); sun.shadow.bias=-.0005;
+scene.add(sun);
+const fill=new THREE.DirectionalLight(0xffffff,.3); fill.position.set(500,300,-400); scene.add(fill);
+
+const std=(c,m,r,o)=>new THREE.MeshStandardMaterial(Object.assign({color:c,metalness:m,roughness:r},o||{}));
+const M={
+  alu:std(0xc5cbd2,.55,.42), profile:std(0xaeb6bf,.6,.45), base:std(0x5b6470,.2,.7), plate:std(0xb9c1ca,.45,.5),
+  cyl:std(0xd6dbe0,.55,.35), cylCap:std(0x8d97a2,.5,.45), rod:std(0xf1f3f5,.95,.14), dark:std(0x2d333a,.1,.85),
+  inox:std(0xdde2e6,.85,.22), funnel:std(0xe0662e,.25,.45), vacOff:std(0x4a525c,.2,.7), vac:std(0x2c68cf,.15,.5,{emissive:0x2c68cf,emissiveIntensity:0}),
+  barF:std(0x7d8792,.3,.5), pad:std(0x30363d,0,.95),
+  film:new THREE.MeshStandardMaterial({color:0xbfe8d3,transparent:true,opacity:.42,roughness:.18,metalness:0,side:THREE.DoubleSide,depthWrite:false}),
+  filmEdge:new THREE.LineBasicMaterial({color:0x3fb97f,transparent:true,opacity:.9}),
+  cover:std(0x274a7c,.05,.6), pages:std(0xf2eee3,0,.9),
+  guard:new THREE.MeshStandardMaterial({color:0xb8dcff,transparent:true,opacity:.1,roughness:.1,metalness:0,depthWrite:false,side:THREE.DoubleSide}),
+  red:std(0xc8211b,.1,.5,{emissive:0x5a0000,emissiveIntensity:.4}), green:std(0x1d9a4a,.1,.4,{emissive:0x1d9a4a,emissiveIntensity:0}),
+  blue:std(0x1f5fbf,.1,.5), amber:std(0xd99a1b,.1,.5,{emissive:0x000000}), lampG:std(0x2fbf62,.1,.4,{emissive:0x2fbf62,emissiveIntensity:0,transparent:true,opacity:.9}),
+  yellow:std(0xe8c31c,.2,.5)
+};
+function box(w,h,d,mat,x,y,z,parent){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x||0,y||0,z||0);m.castShadow=true;m.receiveShadow=true;(parent||scene).add(m);return m;}
+function cylY(r,h,mat,x,y,z,parent){const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,24),mat);m.position.set(x,y,z);m.castShadow=true;(parent||scene).add(m);return m;}
+
+/* Base y placa nido (y=0 es la cara superior de la placa) */
+box(600,300,460,M.base,60,-174,0);
+box(580,12,440,M.alu,60,-18,0);
+box(340,12,260,M.plate,145,-6,0);
+// Guías laterales y línea de referencia
+box(300,4,4,M.dark,155,2,-108); box(300,4,4,M.dark,155,2,108);
+box(2,.4,240,M.yellow,-1,.2,0);
+
+/* Zona de vacío A con orificios */
+const holeCv=document.createElement('canvas'); holeCv.width=200; holeCv.height=480;
+{const g=holeCv.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,200,480); g.fillStyle='#1b1f24';
+ for(let i=0;i<6;i++)for(let j=0;j<15;j++){g.beginPath();g.arc(17+i*33,16+j*32,6,0,7);g.fill();}}
+const holeTex=new THREE.CanvasTexture(holeCv);
+M.vac.map=holeTex; M.vacOff.map=holeTex;
+const vacZone=box(50,.6,120,M.vac,30,.3,0);
+
+/* Pórtico */
+[-170,170].forEach(z=>box(30,262,30,M.profile,70,119,z));
+box(30,30,370,M.profile,70,265,0);
+box(170,30,30,M.profile,85,235,0);
+
+/* Barra de succión + C1 */
+const C1=new THREE.Group(); scene.add(C1);
+box(40,70,52,M.cyl,15,185,0,C1); box(42,8,54,M.cylCap,15,150,0,C1);
+const bar=new THREE.Group(); scene.add(bar);
+const barBody=box(20,15,120,M.alu.clone(),0,8.5,0,bar); box(20,1,120,M.barF,0,.5,0,bar);
+[-30,30].forEach(z=>box(6,6,6,M.dark,0,19,z,bar));
+const c1rod=cylY(5,1,M.rod,15,0,0); const c1g1=cylY(3,1,M.rod,15,0,-18); const c1g2=cylY(3,1,M.rod,15,0,18);
+
+/* Pisador + C4 */
+box(40,70,52,M.cyl,120,185,0); box(42,8,54,M.cylCap,120,150,0);
+const pis=new THREE.Group(); scene.add(pis);
+box(40,6,80,M.alu,0,9,0,pis); box(40,6,80,M.pad,0,3,0,pis);
+const c4rod=cylY(5,1,M.rod,120,0,0);
+
+/* Ionizador */
+const ion=new THREE.Group(); ion.position.set(-120,60,0); ion.rotation.z=-0.36; scene.add(ion);
+box(34,14,44,M.cylCap,0,0,0,ion); box(8,8,30,M.dark,18,-1,0,ion);
+box(8,8,8,M.dark,-20,0,0,ion);
+const NP=90, pGeo=new THREE.BufferGeometry(), pPos=new Float32Array(NP*3), pSeed=[];
+for(let i=0;i<NP;i++)pSeed.push([Math.random(),(Math.random()-.5),(Math.random()-.5)]);
+pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
+const pMat=new THREE.PointsMaterial({color:0x9fd8ff,size:3.2,transparent:true,opacity:0,depthWrite:false});
+scene.add(new THREE.Points(pGeo,pMat));
+
+/* Embudo pico de pato (grupo con origen en la punta) */
+const F=new THREE.Group(); scene.add(F);
+const funnelMeshes=[];
+funnelMeshes.push(box(35,1,160,M.funnel,-17.5,3.5,0,F), box(60,1,160,M.funnel,-65,3.5,0,F));
+const U=new THREE.Group(); F.add(U);
+funnelMeshes.push(box(35,1,160,M.funnel,-17.5,.5,0,U));
+const ala=box(69.3,1,160,M.funnel,-65,17.8,0,U); ala.rotation.z=-Math.PI/6; funnelMeshes.push(ala);
+[-84,84].forEach(z=>box(35,96,4,M.alu,-77.5,52,z,F));
+box(35,10,172,M.alu,-77.5,105,0,F);
+box(30,36,32,M.cyl,-77.5,82,0,F);
+const c3rod=cylY(4,1,M.rod,-77.5,0,0,F);
+box(20,14,70,M.alu,-85,3,-117,F);
+/* C2 */
+box(120,30,44,M.cyl,-170,3,-150); box(8,32,46,M.cylCap,-112,3,-150);
+const c2rod=new THREE.Mesh(new THREE.CylinderGeometry(5,5,1,20),M.rod); c2rod.rotation.z=Math.PI/2; scene.add(c2rod);
+const c2rail=box(120,6,8,M.rod,-170,20,-150);
+
+/* Manual */
+const man=new THREE.Group(); scene.add(man);
+box(230,13,150,M.pages,115,7.5,0,man); box(232,1,152,M.cover,115,.5,0,man); box(232,1,152,M.cover,115,14.5,0,man); box(2,15,152,M.cover,231,7.5,0,man);
+
+/* Bolsa: dos películas deformables */
+const NX=72, NZ=36, BL=305, BW=102.5;
+function filmGeo(){const g=new THREE.BufferGeometry();const pos=new Float32Array((NX+1)*(NZ+1)*3);const idx=[];
+  for(let i=0;i<NX;i++)for(let j=0;j<NZ;j++){const a=i*(NZ+1)+j,b=a+NZ+1;idx.push(a,b,a+1,b,b+1,a+1);}
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setIndex(idx);return g;}
+const bag=new THREE.Group(); scene.add(bag);
+const topG=filmGeo(), botG=filmGeo();
+const topM=new THREE.Mesh(topG,M.film), botM=new THREE.Mesh(botG,M.film);
+topM.renderOrder=3; botM.renderOrder=2; bag.add(topM,botM);
+const rimGeo=new THREE.BufferGeometry(); const rimPos=new Float32Array(NZ*12+NX*12);
+rimGeo.setAttribute('position',new THREE.BufferAttribute(rimPos,3));
+const rim=new THREE.LineSegments(rimGeo,M.filmEdge); bag.add(rim);
+
+/* Guarda, cortina de luz y botonera */
+const guard=new THREE.Group(); scene.add(guard);
+const gx0=-240,gx1=360,gz=220,gy0=-12,gy1=272;
+function pane(w,h,d,x,y,z){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),M.guard);m.position.set(x,y,z);m.renderOrder=5;guard.add(m);}
+pane(4,gy1-140,2*gz,gx0,(140+gy1)/2,0); pane(4,152,gz-110,gx0,(gy0+140)/2,-(110+gz)/2); pane(4,152,gz-110,gx0,(gy0+140)/2,(110+gz)/2);
+pane(gx1-gx0,gy1-gy0,4,(gx0+gx1)/2,(gy0+gy1)/2,-gz); pane(gx1-gx0,gy1-gy0,4,(gx0+gx1)/2,(gy0+gy1)/2,gz);
+pane(gx1-gx0,4,2*gz,(gx0+gx1)/2,gy1,0);
+pane(4,gy1-60,2*gz,gx1,(60+gy1)/2,0);
+const P=(w,h,d,x,y,z)=>{const m=box(w,h,d,M.profile,x,y,z,guard);m.castShadow=false;};
+[gx0,gx1].forEach(x=>[-gz,gz].forEach(z=>P(20,gy1-gy0,20,x,(gy0+gy1)/2,z)));
+[gx0,gx1].forEach(x=>P(20,20,2*gz,x,gy1,0)); [-gz,gz].forEach(z=>P(gx1-gx0,20,20,(gx0+gx1)/2,gy1,z));
+P(20,20,2*gz,gx0,140,0);
+const curtainPosts=[];[-116,116].forEach(z=>{box(14,160,14,M.yellow,gx0-12,68,z);});
+const beamGeo=new THREE.BufferGeometry(); const beamPts=[]; for(let y=8;y<=140;y+=12){beamPts.push(gx0-12,y,-109,gx0-12,y,109);}
+beamGeo.setAttribute('position',new THREE.Float32BufferAttribute(beamPts,3));
+const beamMat=new THREE.LineBasicMaterial({color:0x28c76f,transparent:true,opacity:.55});
+scene.add(new THREE.LineSegments(beamGeo,beamMat));
+// Botonera
+box(40,170,60,M.dark,gx0-30,73,185);
+const estop=cylY(14,10,M.red,gx0-55,130,185); estop.rotation.z=Math.PI/2;
+const confirmBtn=cylY(10,8,M.green,gx0-54,95,185); confirmBtn.rotation.z=Math.PI/2;
+const resetBtn=cylY(10,8,M.blue,gx0-54,65,185); resetBtn.rotation.z=Math.PI/2;
+// Torreta
+cylY(6,30,M.dark,gx0+20,gy1+15,190);
+const lampG=cylY(16,26,M.lampG,gx0+20,gy1+43,190); cylY(16,22,M.amber,gx0+20,gy1+67,190); cylY(16,22,M.red,gx0+20,gy1+89,190);
+
+/* ---------- Física aproximada de la película ---------- */
+const sm=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+function gxBar(x){return x<20?1:x>150?0:.5*(1+Math.cos(Math.PI*(x-20)/130));}
+let S=INIT;
+function supports(x,st){
+  const barY=51-50*st.c1, Lb=st.hold*Math.max(0,barY-1.4);
+  let H=0,u0=.58;
+  const hb=Lb*gxBar(x); if(hb>H){H=hb;u0=60/BW;}
+  const tip=-25+60*st.c2, Uy=12+22*st.c3, Hb=Uy+1.2;
+  if(tip>0){const hf=x<=tip?Hb:Hb*(1-sm(0,80,x-tip)); if(hf>H){H=hf;u0=80/BW;}}
+  const r=-560+585*st.m, mb=4.2-3.6*st.mDrop, Ht=mb+15.4;
+  if(st.m>0&&r+230>0){const hm=Ht*sm(r-22,r+4,x)*(1-sm(r+226,r+252,x)); if(hm>H){H=hm;u0=74/BW;}}
+  H+=st.ion*12*gxBar(x)*(1-st.c2);
+  H*=1-sm(286,305,x);
+  return [H,u0];
+}
+function updateFilm(st){
+  const tp=topG.attributes.position.array, bp=botG.attributes.position.array;
+  let k=0, rk=0;
+  const mouthT=[],mouthB=[];
+  for(let i=0;i<=NX;i++){
+    const x=BL*i/NX, [H,u0]=supports(x,st), zs=(BW-.4*H)/BW;
+    for(let j=0;j<=NZ;j++){
+      const v=-1+2*j/NZ, u=Math.abs(v), s=u<u0?0:(u-u0)/(1-u0), c=.5-.5*Math.cos(Math.PI*s);
+      const z=v*BW*zs;
+      const yt=.9+H*(1-.5*c), yb=.3+H*.5*c;
+      tp[k]=x;tp[k+1]=yt;tp[k+2]=z; bp[k]=x;bp[k+1]=yb;bp[k+2]=z; k+=3;
+      if(i===0){mouthT.push(x,yt,z);mouthB.push(x,yb,z);}
+    }
+  }
+  topG.attributes.position.needsUpdate=true; botG.attributes.position.needsUpdate=true;
+  topG.computeVertexNormals(); botG.computeVertexNormals();
+  // borde de la boca (dos curvas) y costados
+  const R=rimGeo.attributes.position.array; let q=0;
+  for(let j=0;j<NZ;j++){for(const arr of [mouthT,mouthB]){R[q++]=arr[j*3];R[q++]=arr[j*3+1];R[q++]=arr[j*3+2];R[q++]=arr[j*3+3];R[q++]=arr[j*3+4];R[q++]=arr[j*3+5];}}
+  for(let i=0;i<NX;i++){for(const jj of [0,NZ]){const a=(i*(NZ+1)+jj)*3,b=((i+1)*(NZ+1)+jj)*3;R[q++]=tp[a];R[q++]=tp[a+1];R[q++]=tp[a+2];R[q++]=tp[b];R[q++]=tp[b+1];R[q++]=tp[b+2];}}
+  rimGeo.setDrawRange(0,q/3); rimGeo.attributes.position.needsUpdate=true;
+}
+
+/* ---------- Aplicar estado ---------- */
+function setRod(mesh,x,y0,y1,z){const h=Math.max(.5,y1-y0);mesh.scale.y=h;mesh.position.set(x,(y0+y1)/2,z===undefined?mesh.position.z:z);}
+function apply(st){
+  const barY=51-50*st.c1;
+  bar.position.set(15,barY,0);
+  setRod(c1rod,15,barY+16,146,0); setRod(c1g1,15,barY+16,146,-18); setRod(c1g2,15,barY+16,146,18);
+  const padDown=st.m>0?(4.2-3.6*st.mDrop)+16.6:1.4; const padY=60-(60-padDown)*st.c4; pis.position.set(120,padY,0); setRod(c4rod,120,padY+12,146,0);
+  const tip=-25+60*st.c2; F.position.set(tip,0,0);
+  const Uy=12+22*st.c3; U.position.y=Uy;
+  setRod(c3rod,-77.5,Uy+25,64,0);
+  const bx=tip-85; c2rod.scale.y=Math.max(.5,bx-(-108)); c2rod.position.set((bx-108)/2,3,-150);
+  // vacío
+  M.vac.emissiveIntensity=st.vacA*.55; vacZone.material=colorMode?M.vac:M.vacOff;
+  if(!colorMode) M.vacOff.color.setHex(st.vacA>.5?0x5a6a80:0x4a525c);
+  barBody.material.emissive=new THREE.Color(colorMode?0x2c68cf:0x000000); barBody.material.emissiveIntensity=st.vacBar*.35;
+  // bolsa
+  const dx=st.exit*430, drop=(1-st.bagIn)*70;
+  bag.position.set(dx,drop,0);
+  const fade=1-sm(.55,1,st.exit);
+  M.film.opacity=.42*Math.min(st.bagIn*1.5,1)*fade; M.filmEdge.opacity=.9*Math.min(st.bagIn*1.5,1)*fade;
+  bag.visible=st.bagIn>0.001&&fade>0.01;
+  updateFilm(st);
+  // manual
+  const r=-560+585*st.m, mb=4.2-3.6*st.mDrop;
+  man.visible=st.m>0.001&&fade>0.01; man.position.set(r+dx,mb+drop,0);
+  man.children.forEach(c=>{c.material.transparent=fade<1;c.material.opacity=fade;});
+  // ionizado
+  pMat.opacity=st.ion*.9;
+  // cortina y lámparas
+  beamMat.color.setHex(st.curtain>.5?0xf0a020:0x28c76f); beamMat.opacity=st.curtain>.5?.85:.5;
+  M.lampG.emissiveIntensity=st.lamp*1.2;
+  M.green.emissiveIntensity=st.confirm*1.3;
+}
+let tIon=0;
+function animIon(dt){
+  tIon+=dt; const a=pGeo.attributes.position.array;
+  const o=new THREE.Vector3(-100,53,0), d=new THREE.Vector3(118,-30,0);
+  for(let i=0;i<NP;i++){const [ph,sy,sz]=pSeed[i]; const f=(ph+tIon*1.4)%1;
+    a[i*3]=o.x+d.x*f; a[i*3+1]=o.y+d.y*f+sy*26*f; a[i*3+2]=sz*150*f+sz*10;}
+  pGeo.attributes.position.needsUpdate=true;
+}
+
+/* ---------- Color por función ---------- */
+let colorMode=true;
+function setColorMode(on){colorMode=on;funnelMeshes.forEach(m=>m.material=on?M.funnel:M.inox);$('#legend').hidden=!on;}
+
+/* ---------- Etiquetas ---------- */
+const labelsEl=$('#labels');
+const LBL=[
+ ['Barra de succión · C1',()=>[15,bar.position.y+18,60]],
+ ['Zona de vacío A',()=>[30,1,-60]],
+ ['Embudo · C2 / C3',()=>[F.position.x-77.5,112,86]],
+ ['Ionizador',()=>[-120,72,22]],
+ ['Pisador · C4',()=>[120,pis.position.y+14,40]],
+ ['Cortina de luz',()=>[gx0-12,150,-116]],
+ ['Bolsa PE 16 µm',()=>[230+bag.position.x,bag.position.y+4,-100]],
+ ['Manual',()=>[man.position.x+180,man.position.y+16,75],()=>man.visible],
+ ['Botonera',()=>[gx0-55,150,185]]
+].map(([t,f,vis])=>{const d=document.createElement('div');d.className='lbl';d.textContent=t;labelsEl.appendChild(d);return {d,f,vis};});
+const v3=new THREE.Vector3();
+function placeLabels(){
+  if(!showLabels){labelsEl.hidden=true;return;} labelsEl.hidden=false;
+  const w=stage.clientWidth,h=stage.clientHeight;
+  for(const L of LBL){const p=L.f(); v3.set(p[0],p[1],p[2]).project(camera);
+    const ok=v3.z<1&&(!L.vis||L.vis())&&Math.abs(v3.x)<1.05&&Math.abs(v3.y)<1.05;
+    L.d.style.display=ok?'block':'none'; if(!ok)continue;
+    L.d.style.transform=`translate(${((v3.x+1)/2*w+6).toFixed(1)}px,${((1-v3.y)/2*h-10).toFixed(1)}px)`;}
+}
+let showLabels=true;
+
+/* ---------- Cámara ---------- */
+const VIEWS={
+  iso:{p:[-470,400,560],t:[40,40,0]}, op:{p:[-720,180,0],t:[30,40,0]},
+  side:{p:[60,90,820],t:[40,40,0]}, top:{p:[61,900,1],t:[60,0,0]},
+  mouth:{p:[-180,120,230],t:[15,20,0]}
+};
+let camAnim=null;
+function goView(k,instant){const v=VIEWS[k];document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===k));
+  const to={p:new THREE.Vector3(...v.p),t:new THREE.Vector3(...v.t)};
+  if(instant||reduce){camera.position.copy(to.p);controls.target.copy(to.t);controls.update();camAnim=null;return;}
+  camAnim={fp:camera.position.clone(),ft:controls.target.clone(),to,t:0};}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>goView(b.dataset.view)));
+
+/* ---------- UI de secuencia ---------- */
+const stepsEl=$('#steps'), tl=$('#tl'), outsEl=$('#outs');
+let lastPh='';
+STEPS.forEach((s,i)=>{
+  if(s.ph!==lastPh){const li=document.createElement('li');li.className='phase';li.textContent=s.ph;stepsEl.appendChild(li);lastPh=s.ph;}
+  const li=document.createElement('li');li.dataset.i=i;
+  li.innerHTML=`<button type="button"><span class="n">${String(s.n).padStart(2,'0')}</span><span>${s.name}</span><span class="g">${s.dur.toFixed(1)} s</span></button>`;
+  li.querySelector('button').addEventListener('click',()=>{seek(s.t0+.001);});
+  stepsEl.appendChild(li); s.li=li;
+  const seg=document.createElement('button');seg.className='seg';seg.style.flex=s.dur;seg.setAttribute('aria-label',`Paso ${s.n}: ${s.name}`);
+  seg.innerHTML=`<div class="fill"></div><span>${s.n}</span>`;seg.addEventListener('click',()=>seek(s.t0+.001));tl.appendChild(seg);s.seg=seg;
+});
+Object.keys(OUTN).forEach(k=>{const d=document.createElement('div');d.className='q';d.dataset.q=k;d.innerHTML=`<i></i><b>${k}</b><span>${OUTN[k]}</span>`;outsEl.appendChild(d);});
+let curIdx=-1;
+function updateUI(t){
+  const i=stepIndexAt(t), s=STEPS[i];
+  STEPS.forEach((x,j)=>{const f=clamp((t-x.t0)/x.dur,0,1);x.seg.querySelector('.fill').style.width=(f*100)+'%';x.seg.classList.toggle('done',f>=1);x.seg.classList.toggle('cur',j===i);});
+  if(i!==curIdx){curIdx=i;
+    STEPS.forEach((x,j)=>x.li.classList.toggle('cur',j===i));
+    $('#nowK').textContent=`Paso ${s.n} · ${s.ph}`; $('#nowT').textContent=s.name; $('#nowD').textContent=s.desc;
+    outsEl.querySelectorAll('.q').forEach(q=>q.classList.toggle('on',s.outs.includes(q.dataset.q)));
+  }
+}
+
+/* ---------- Reproducción ---------- */
+let t=STEPS[6].t0+STEPS[6].dur*.9, playing=false, speed=1;
+const playBtn=$('#play');
+function setPlaying(p){playing=p;playBtn.textContent=p?'Pausa':'Reproducir';}
+function seek(nt){t=clamp(nt,0,TOTAL);S=stateAt(t);apply(S);updateUI(t);}
+playBtn.addEventListener('click',()=>{if(!playing&&t>=TOTAL-1e-3)t=0;setPlaying(!playing);});
+$('#prev').addEventListener('click',()=>{const i=stepIndexAt(t);const p=(t-STEPS[i].t0)>.25?i:Math.max(0,i-1);seek(STEPS[p].t0+.001);});
+$('#next').addEventListener('click',()=>{const i=stepIndexAt(t);seek(i<STEPS.length-1?STEPS[i+1].t0+.001:TOTAL);});
+$('#speed').addEventListener('change',e=>speed=+e.target.value);
+$('#tGuard').addEventListener('change',e=>guard.visible=e.target.checked);
+$('#tLabels').addEventListener('change',e=>showLabels=e.target.checked);
+$('#tColor').addEventListener('change',e=>{setColorMode(e.target.checked);apply(S);});
+const loopEl=$('#tLoop');
+
+/* ---------- Tema ---------- */
+function syncTheme(){const c=getComputedStyle(document.documentElement).getPropertyValue('--scene').trim()||'#e3e7eb';scene.background=new THREE.Color(c);}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',syncTheme);
+new MutationObserver(syncTheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+syncTheme();
+
+/* ---------- Tamaño ---------- */
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+new ResizeObserver(resize).observe(stage); resize();
+
+/* ---------- Bucle ---------- */
+setColorMode(true); goView('iso',true); seek(t);
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  if(playing){t+=dt*speed; if(t>=TOTAL){if(loopEl.checked){t=0;}else{t=TOTAL;setPlaying(false);}} S=stateAt(t);apply(S);updateUI(t);}
+  if(S.ion>0)animIon(dt);
+  if(camAnim){camAnim.t=Math.min(1,camAnim.t+dt/.8);const e=ease(camAnim.t);
+    camera.position.lerpVectors(camAnim.fp,camAnim.to.p,e);controls.target.lerpVectors(camAnim.ft,camAnim.to.t,e);if(camAnim.t>=1)camAnim=null;}
+  controls.update(); renderer.render(scene,camera); placeLabels();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
